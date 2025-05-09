@@ -9,3 +9,4 @@ openai>=1.14.3
 tiktoken>=0.5.1
 markdown
 langchain-community
+tabulate
