@@ -85,7 +85,7 @@ llm = ChatOpenAI(temperature=0.3)
 recommendation_prompt = PromptTemplate(
     input_variables=["stats", "columns"],
     template="""
-You are a senior data analyst. Given the descriptive statistics and column names below, provide a professional, concise analysis summary and key insights or patterns.
+As data analyst. Given the descriptive statistics and column names below, provide a professional, concise analysis summary and key insights or patterns.
 
 Descriptive Stats:
 {stats}
