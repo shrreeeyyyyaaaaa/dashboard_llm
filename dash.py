@@ -13,7 +13,7 @@ from langchain.chains import LLMChain
 
 # ---------- PAGE CONFIG & STYLING ----------
 st.set_page_config(layout="wide")
-st.title("📊 Smart Data Dashboard using LangChain + Plotly")
+st.title("📊 Smart Data Dashboard using LangChain with Plotly")
 
 st.markdown("""
     <style>
