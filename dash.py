@@ -14,7 +14,7 @@ from langchain.chains import LLMChain
 
 # -------- Streamlit Config --------
 st.set_page_config(layout="wide")
-st.title("📈 Smart Sales & Labor Load Optimization Dashboard")
+st.title("Dashboard")
 
 # -------- File Parser --------
 def parse_uploaded_files(uploaded_files):
@@ -50,8 +50,6 @@ llm = ChatOpenAI(temperature=0.3)
 recommendation_prompt = PromptTemplate(
     input_variables=["stats", "columns"],
     template="""
-You are a data analyst. Given the stats and column names below, generate key insights, patterns, and chart recommendations.
-
 Stats:
 {stats}
 
@@ -61,8 +59,11 @@ Columns:
 Output:
 - Insight 1
 - Insight 2
-- Chart: Bar: Category vs Sales
-- Chart: Line: Date vs MaterialUsed
+- Insight 3
+- Insight 4
+- Insight 5
+- Chart: Bar:
+- Chart: Line: 
 """
 )
 
@@ -149,7 +150,7 @@ def auto_generate_charts(df):
 
 # -------- Export as PNG --------
 def get_image_download(fig):
-    img_bytes = fig.to_image(format="png")
+    img_bytes = fig.to_image(format=["png","pdf"])
     return BytesIO(img_bytes)
 
 # -------- Streamlit UI --------
