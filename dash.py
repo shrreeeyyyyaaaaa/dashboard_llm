@@ -150,7 +150,7 @@ def auto_generate_charts(df):
 
 # -------- Export as PNG --------
 def get_image_download(fig):
-    img_bytes = fig.to_image(format=["png","pdf"])
+    img_bytes = fig.to_image(format="png")
     return BytesIO(img_bytes)
 
 # -------- Streamlit UI --------
