@@ -1,80 +1,56 @@
 import streamlit as st
 import pandas as pd
 import json
-import io
 import pdfplumber
 from docx import Document
 import plotly.express as px
+import plotly.graph_objects as go
 import plotly.io as pio
-import ast
+from io import BytesIO
 
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 
-# ---------- PAGE CONFIG & STYLING ----------
+# -------- Streamlit Config --------
 st.set_page_config(layout="wide")
-st.title("📊 Smart Data Dashboard using LangChain with Plotly")
+st.title("📈 Smart Sales & Labor Load Optimization Dashboard")
 
-st.markdown("""
-    <style>
-        body { background-color: #fdf6e3; }
-        .block-container { padding: 2rem; }
-        .stMarkdown h2 { color: #3a3a3a; margin-top: 2rem; }
-        .stMarkdown h3 { color: #444; }
-        .stDataFrame { background-color: #fff8dc; }
-    </style>
-""", unsafe_allow_html=True)
-
-# ---------- FILE PARSER ----------
+# -------- File Parser --------
 def parse_uploaded_files(uploaded_files):
-    structured = []
-    unstructured = []
-
+    structured, unstructured = [], []
     for file in uploaded_files:
-        filename = file.name.lower()
-        if filename.endswith(".csv"):
+        if file.name.endswith(".csv"):
             structured.append(pd.read_csv(file))
-        elif filename.endswith((".xlsx", ".xls")):
+        elif file.name.endswith((".xlsx", ".xls")):
             structured.append(pd.read_excel(file))
-        elif filename.endswith(".json"):
+        elif file.name.endswith(".json"):
             content = json.load(file)
             try:
                 structured.append(pd.json_normalize(content))
-            except Exception:
+            except:
                 unstructured.append(str(content))
-        elif filename.endswith(".pdf"):
+        elif file.name.endswith(".pdf"):
             text = ""
             with pdfplumber.open(file) as pdf:
                 for page in pdf.pages:
                     text += page.extract_text() + "\n"
             unstructured.append(text)
-        elif filename.endswith(".txt"):
+        elif file.name.endswith(".txt"):
             unstructured.append(file.read().decode("utf-8"))
-        elif filename.endswith(".docx"):
+        elif file.name.endswith(".docx"):
             doc = Document(file)
             fullText = "\n".join([para.text for para in doc.paragraphs])
             unstructured.append(fullText)
-
     return structured, unstructured
 
-# ---------- DESCRIPTIVE STATS ----------
-def describe_dataframe(df: pd.DataFrame) -> str:
-    desc = df.describe(include='all').T.fillna('').to_markdown()
-    return f"### 📌 Descriptive Statistics:\n\n{desc}"
-
-# ---------- GPT ANALYSIS + CHART SUGGESTIONS ----------
+# -------- GPT Recommendation --------
 llm = ChatOpenAI(temperature=0.3)
 
 recommendation_prompt = PromptTemplate(
     input_variables=["stats", "columns"],
     template="""
-You are a data visualization expert. Given the dataset statistics and the list of column names, do the following:
-1. Write a short professional summary of key insights.
-2. Recommend 3 useful visualizations. Format each as a JSON object like:
-   {"type": "scatter", "x": "Age", "y": "Income"}
-   {"type": "histogram", "x": "Sales"}
-   {"type": "bar", "x": "Region", "y": "Profit"}
+You are a data analyst. Given the stats and column names below, generate key insights, patterns, and chart recommendations.
 
 Stats:
 {stats}
@@ -82,104 +58,125 @@ Stats:
 Columns:
 {columns}
 
-Respond in this format:
-### Summary:
-[your summary]
-
-### Suggested Visualizations:
-[{"type": "scatter", "x": "A", "y": "B"}, {"type": "histogram", "x": "C"}, ...]
+Output:
+- Insight 1
+- Insight 2
+- Chart: Bar: Category vs Sales
+- Chart: Line: Date vs MaterialUsed
 """
 )
 
-def generate_gpt_recommendation(df: pd.DataFrame):
+def generate_gpt_recommendation(df: pd.DataFrame) -> str:
     try:
         stats = df.describe(include='all').fillna('').to_string()
         columns = ", ".join(df.columns)
         chain = LLMChain(llm=llm, prompt=recommendation_prompt)
         result = chain.run(stats=stats, columns=columns)
-
-        summary_section = result.split("### Suggested Visualizations:")[0]
-        viz_section = result.split("### Suggested Visualizations:")[1]
-        suggested_charts = ast.literal_eval(viz_section.strip())
-
-        return summary_section.strip(), suggested_charts
+        return result
     except Exception as e:
-        return f"GPT analysis failed: {e}", []
+        return f"GPT analysis failed: {e}"
 
-# ---------- CHART CREATION BASED ON GPT ----------
-def generate_charts_from_gpt(df, suggestions):
+# -------- Descriptive Stats --------
+def describe_dataframe(df: pd.DataFrame) -> str:
+    return df.describe(include='all').T.fillna('').to_markdown()
+
+# -------- Auto Visualization Generator --------
+def auto_generate_charts(df):
     charts = []
+    num_cols = df.select_dtypes(include='number').columns.tolist()
+    cat_cols = df.select_dtypes(include='object').columns.tolist()
+    dt_cols = df.select_dtypes(include='datetime').columns.tolist()
 
-    for s in suggestions:
-        chart_type = s.get("type")
-        x = s.get("x")
-        y = s.get("y", None)
+    # Histogram
+    for col in num_cols:
+        fig = px.histogram(df, x=col, title=f'Histogram: {col}')
+        charts.append((f'Histogram: {col}', fig))
 
-        if chart_type == "scatter" and x in df.columns and y in df.columns:
-            charts.append((f"Scatter: {x} vs {y}", px.scatter(df, x=x, y=y)))
-        elif chart_type == "histogram" and x in df.columns:
-            charts.append((f"Histogram of {x}", px.histogram(df, x=x)))
-        elif chart_type == "bar" and x in df.columns and y in df.columns:
-            charts.append((f"Bar Chart: {x} vs {y}", px.bar(df, x=x, y=y)))
-        elif chart_type == "line" and x in df.columns and y in df.columns:
-            charts.append((f"Line Chart: {x} over {y}", px.line(df, x=x, y=y)))
-        elif chart_type == "box" and x in df.columns:
-            charts.append((f"Box Plot of {x}", px.box(df, y=x)))
+    # Box
+    for col in num_cols:
+        fig = px.box(df, y=col, title=f'Box Plot: {col}')
+        charts.append((f'Box: {col}', fig))
+
+    # Scatter
+    if len(num_cols) >= 2:
+        fig = px.scatter(df, x=num_cols[0], y=num_cols[1], title=f'Scatter: {num_cols[0]} vs {num_cols[1]}')
+        charts.append((f'Scatter: {num_cols[0]} vs {num_cols[1]}', fig))
+
+    # Bar
+    for cat in cat_cols[:1]:
+        for num in num_cols[:1]:
+            fig = px.bar(df, x=cat, y=num, title=f'Bar Chart: {cat} vs {num}')
+            charts.append((f'Bar: {cat} vs {num}', fig))
+
+    # Line (for time series)
+    if dt_cols:
+        for num in num_cols[:1]:
+            fig = px.line(df.sort_values(by=dt_cols[0]), x=dt_cols[0], y=num, title=f'Line: {dt_cols[0]} vs {num}')
+            charts.append((f'Line: {dt_cols[0]} vs {num}', fig))
+
+    # Heatmap
+    if len(num_cols) >= 2:
+        corr = df[num_cols].corr()
+        fig = px.imshow(corr, text_auto=True, title="Correlation Heatmap")
+        charts.append(("Correlation Heatmap", fig))
+
+    # Pie
+    if cat_cols:
+        value_counts = df[cat_cols[0]].value_counts().nlargest(5)
+        fig = px.pie(values=value_counts.values, names=value_counts.index,
+                     title=f'Pie Chart: {cat_cols[0]} (Top 5)')
+        charts.append((f'Pie: {cat_cols[0]}', fig))
+
+    # Waterfall (sales or material flow)
+    try:
+        cols = [col for col in num_cols if 'sales' in col.lower() or 'material' in col.lower()]
+        if len(cols) >= 1:
+            base_col = cols[0]
+            changes = df[base_col].dropna().diff().fillna(df[base_col])
+            fig = go.Figure(go.Waterfall(
+                name="Material Flow",
+                orientation="v",
+                x=df.index.astype(str),
+                y=changes,
+                connector={"line": {"color": "rgb(63, 63, 63)"}},
+            ))
+            fig.update_layout(title=f"Waterfall: {base_col} Movement")
+            charts.append((f"Waterfall: {base_col}", fig))
+    except:
+        pass
 
     return charts
 
-# ---------- UNSTRUCTURED SUMMARY ----------
-def summarize_text_tool(text: str) -> str:
-    summary = text[:300] + "..."  # Placeholder
-    return f"### 🧠 Summary of Unstructured Data:\n\n{summary}"
+# -------- Export as PNG --------
+def get_image_download(fig):
+    img_bytes = fig.to_image(format="png")
+    return BytesIO(img_bytes)
 
-# ---------- MAIN APP ----------
-uploaded_files = st.file_uploader("Upload your data files (CSV, Excel, PDF, TXT, JSON, DOCX)",
-                                   type=["csv", "xlsx", "xls", "pdf", "txt", "json", "docx"],
-                                   accept_multiple_files=True)
+# -------- Streamlit UI --------
+uploaded_files = st.file_uploader("📂 Upload sales/labor data files", type=["csv", "xlsx", "xls", "json", "pdf", "txt", "docx"], accept_multiple_files=True)
 
 if uploaded_files:
     structured_data, unstructured_data = parse_uploaded_files(uploaded_files)
 
-    if not structured_data and not unstructured_data:
-        st.warning("No readable content found. Please upload valid files.")
-    else:
-        st.success("Files processed. Choose a tab to explore insights and visualizations.")
+    for idx, df in enumerate(structured_data):
+        st.subheader(f"📑 File {idx + 1}")
 
-        for idx, df in enumerate(structured_data):
-            st.header(f"📂 Structured File {idx + 1}")
-            tab1, tab2 = st.tabs(["📑 Descriptive Stats", "📈 Visualizations"])
+        tab1, tab2 = st.tabs(["📋 Descriptive Stats", "📊 Visualizations"])
 
-            with tab1:
-                st.markdown(describe_dataframe(df))
-                st.dataframe(df.head(10))
-                summary, suggestions = generate_gpt_recommendation(df)
-                st.markdown("### 🔍 GPT-Powered Insights")
-                st.markdown(summary)
+        with tab1:
+            st.markdown("### Descriptive Statistics")
+            st.markdown(describe_dataframe(df))
+            st.dataframe(df.head(10))
 
-            with tab2:
-                st.markdown("### 📊 Charts Based on GPT Recommendations")
-                charts = generate_charts_from_gpt(df, suggestions)
-                if charts:
-                    for i, (title, fig) in enumerate(charts):
-                        st.subheader(title)
-                        st.plotly_chart(fig, use_container_width=True)
+            st.markdown("### 🔍 GPT-Powered Insights")
+            insights = generate_gpt_recommendation(df)
+            st.markdown(insights)
 
-                        # Export as PNG
-                        try:
-                            img_bytes = fig.to_image(format="png")
-                            st.download_button(
-                                label="📥 Download Chart as PNG",
-                                data=img_bytes,
-                                file_name=f"{title.replace(' ', '_')}.png",
-                                mime="image/png",
-                                key=f"download_button_{i}"
-                            )
-                        except Exception as e:
-                            st.warning(f"Could not export chart: {e}")
-                else:
-                    st.warning("No valid chart suggestions found from GPT.")
-
-        for i, text in enumerate(unstructured_data):
-            st.header(f"📝 Unstructured File {i + 1}")
-            st.markdown(summarize_text_tool(text))
+        with tab2:
+            st.markdown("### 📈 Auto-generated Charts")
+            charts = auto_generate_charts(df)
+            for title, fig in charts:
+                st.subheader(title)
+                st.plotly_chart(fig, use_container_width=True)
+                png_data = get_image_download(fig)
+                st.download_button(f"Download {title} as PNG", png_data, file_name=f"{title}.png", mime="image/png")
